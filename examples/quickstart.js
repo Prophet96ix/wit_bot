@@ -55,7 +55,6 @@ const actions = {
                     context.forecast = msg;
                     //do not need missingLocation if we have it
                     delete context.missingLocation;
-                    console.log(context);
                     return resolve(context);
                 });
             } else {
@@ -64,6 +63,8 @@ const actions = {
                 delete context.forecast;
                 return resolve(context);
             }
+            delete context.missingLocation;
+            delete context.forecast;
         });
     },
 };
