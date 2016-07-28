@@ -71,3 +71,5 @@ const actions = {
 
 const client = new Wit({ accessToken, actions });
 client.interactive();
+
+//telegram token 216516492:AAFyv5D1w8kOv9zn7Rsm5Yr9p_lzerIENWs
