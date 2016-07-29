@@ -19,6 +19,8 @@ const express = require('express');
 const fetch = require('node-fetch');
 const request = require('request');
 
+var weather = require('./weather')('7444333da54fa1b03a38b704be42e170');
+
 const TelegramBot = require('node-telegram-bot-api');
 
 
@@ -43,6 +45,18 @@ if (!TELEGRAM_TOKEN) {
     throw new Error('missing TELEGRAM_TOKEN') }
 
 
+const firstEntityValue = (entities, entity) => {
+    const val = entities && entities[entity] &&
+        Array.isArray(entities[entity]) &&
+        entities[entity].length > 0 &&
+        entities[entity][0].value;
+    if (!val) {
+        return null;
+    }
+    return typeof val === 'object' ? val.value : val;
+};
+
+
 // ----------------------------------------------------------------------------
 // Messenger API specific code
 
@@ -55,6 +69,19 @@ const fbMessage = (id, text) => {
         message: { text },
     })
     telegram.sendMessage(id, text);
+    const qs = 'access_token=123';
+    return fetch('https://graph.facebook.com/me/messages?' + qs, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body,
+    })
+        .then(rsp => rsp.json())
+        .then(json => {
+
+            return {"name":"Jim Cowart","location":{"city":{"name":"Chattanooga","population":167674},"state":{"name":"Tennessee","abbreviation":"TN","population":6403000}},"company":"appendTo"};
+        });
+
+   // return  ;
 };
 
 // ----------------------------------------------------------------------------
@@ -88,12 +115,22 @@ const actions = {
         // Our bot has something to say!
         // Let's retrieve the Facebook user whose session belongs to
         const recipientId = sessions[sessionId].id;
+
         if (recipientId) {
             // Yay, we found our recipient!
             // Let's forward our bot response to her.
             // We return a promise to let our bot know when we're done sending
-            debugger;
+
             return fbMessage(recipientId, text)
+            .then(() => null)
+            .catch((err) => {
+                console.error(
+                    'Oops! An error occurred while forwarding the response to',
+                    recipientId,
+                    ':',
+                    err.stack || err
+                );
+            });
 
         } else {
             console.error('Oops! Couldn\'t find user for session:', sessionId);
@@ -101,21 +138,56 @@ const actions = {
             return Promise.resolve()
         }
     },
-    // You should implement your custom actions here
-    // See https://wit.ai/docs/quickstart
+    getForecast({ context, entities }) {
+        return new Promise(function(resolve, reject) {
+
+            var location = firstEntityValue(entities, 'location')
+            if (location) {
+                weather.get(location, function(error, msg) {
+                    if (error) {
+                        console.error(error);
+                        //let the bot say there was an error
+                        return reject(error);
+                    }
+                    context.forecast = msg;
+                    //do not need missingLocation if we have it
+                    delete context.missingLocation;
+                    return resolve(context);
+                });
+            } else {
+                //goto other branch to get a location
+                context.missingLocation = true;
+                delete context.forecast;
+                return resolve(context);
+            }
+            delete context.missingLocation;
+            delete context.forecast;
+        });
+    },
+    respondToInsult({context, entities}) {
+        return new Promise(function(resolve, reject) {
+
+            //http://webknox.com/api#!/jokes/praise_GET
+            var index = Math.floor(Math.random() * jokes.length);
+            var randomQuote = jokes[index];
+            debugger;
+            context.joke = randomQuote.joke;;
+            delete context.insult;
+            return resolve(context);
+        });
+    }
 };
 
 // Setting up our WIT bot
 const wit = new Wit({
     accessToken: WIT_TOKEN,
     actions,
-    logger: new log.Logger(log.INFO)
+    logger: new log.Logger(log.DEBUG)
 });
 
 const telegram = new TelegramBot(TELEGRAM_TOKEN, { polling: true });
 
 telegram.on('message', function(msg) {
-
     console.log(JSON.stringify(msg));
 
     const sender = msg.chat.id;
@@ -126,21 +198,24 @@ telegram.on('message', function(msg) {
     const text = msg.text;
      // Let's forward the message to the Wit.ai Bot Engine
      // This will run all actions until our bot has nothing left to do
-     wit.runActions(
+    wit.runActions(
      sessionId, // the user's current session
      text, // the user's message
      sessions[sessionId].context // the user's current session state
      ).then((context) => {
      // Our bot did everything it has to do.
      // Now it's waiting for further messages to proceed.
-     console.log('Waiting for next user messages');
-debugger;
+     console.log('Waiting for next user messages:' + JSON.stringify(context));
      // Based on the session state, you might want to reset the session.
      // This depends heavily on the business logic of your bot.
      // Example:
-     // if (context['done']) {
-     //   delete sessions[sessionId];
-     // }
+     if(context.forecast){
+         delete context.forecast;
+     }
+
+     if (context['done']) {
+        delete sessions[sessionId];
+     }
 
      // Updating the user's current session state
      sessions[sessionId].context = context;
@@ -217,3 +292,39 @@ debugger;
  });
  */
 console.log("Running");
+
+//http://www.blinde-kuh.de/witze/quatsch_3.html
+var jokes = [
+    {joke: 'Geht ein Zyklop zum Augearzt.'},
+    {joke: "Lieber arm dran als Arm ab."},
+    {joke: "Wo wohnen Katzen? Im Mietzhaus!"},
+    {joke: "Was macht der Clown im Büro? Faxen!"},
+    {joke: "Brechstangen sind aus Diebstahl gemacht."},
+    {joke: "Sagt die Null zur Acht: „Schicker Gürtel!"},
+    {joke: "Wie heißt das Reh mit Vornamen? Kartoffelpü."},
+    {joke: "Was ist grün und hüpft durch den Wald? - Ein Rudel Gurken!"},
+    {joke: "Was sitzt auf dem Baum und ruft: \"Ahhahh, ahhahh\"? - Ein Uhu mit Sprachfehler!"},
+    {joke: "Was macht ein Jäger, wenn er eine Schlange sieht? - Er stellt sich hinten an."},
+    {joke: "Was für eine Zeit ist gekommen, wenn ein Elefant auf einem Gartentor sitzt? - Die Zeit um ein neues Gartentor zu kaufen."},
+    {joke: "Was gehört dir aber andere benutzen es am meisten? - Dein Name."},
+    {joke: "Was passiert mit einem Engel, wenn er in einen Misthaufen fliegt? - Er bekommt Kotflügel."},
+    {joke: "Was ist braun und schwimmt im Wasser? - Ein U-Brot."},
+    {joke: "Was ist braun und sitzt hinter Gittern? - Eine Knastanie"},
+    {joke: "Was ist Lila und sitzt in der Kirche ganz vorne? - Eine Frommbeere."},
+    {joke: "Was ist braun und schaut durchs Fenster? - Ein Spannzapfen."},
+    {joke: "Was ist schwarz und weiß und dreht sich immer im Kreis? - Ein Pinguin in einer Waschmaschine."},
+    {joke: "Was ist weiß und steigt aus der Erde? - Ein Maulwurf im Nachthemd."},
+    {joke: "Was ist grün und rennt im zickzack aus der Küche? - Der Fluchtsalat!"},
+    {joke: "Was macht kcat kcit? - Eine Uhr im Rückwärtsgang!"},
+    {joke: "Was steht mitten in Kassel? – ss."},
+    {joke: "Warum macht die Biene summ? - Weil sie ihren Text vergessen hat."},
+    {joke: "Warum ist die Schule eine Oase? - Nur Kamele wollen dorthin."},
+    {joke: "Welcher Bus hat den Ozean überquert? - Kolumbus."},
+    {joke: "Was ist gelb und kann nicht schwimmen? Ein Bagger! Warum kann ein Bagger nicht schwimmen? Weil er nur einen Arm hat!"},
+    {joke: "Warum dürfen Elefanten nicht Rad fahren? - Weil sie keinen Daumen zum Klingeln haben."},
+    {joke: "Welche Noten sind die beliebtesten? - Die Banknoten."},
+    {joke: "Welche Kunden werden nie bedient? - Die Sekunden und Urkunden!"},
+    {joke: "Was ist das Lieblings-Spiel von Katzen?? - MAU-MAU."},
+    {joke: "Rollen zwei Tomaten über die Straße. Sagt die eine: \"Vorsicht, da vorne kommt ein Lastwatsch!"},
+    {joke: "Was ist ein Cowboy ohne Pferd? - Ein Sattelschlepper."}
+];
