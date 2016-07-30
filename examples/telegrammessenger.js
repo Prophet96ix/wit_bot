@@ -175,10 +175,10 @@ const actions = {
                     return reject(error);
                 }
                 //need to delete a context at some point
-                context.rover_photo = msg;
+                context.rover_photo = msg.img_src;
                 context.myAction = 'sendPhoto';
                 //Send the photo to telegram and wait for it.
-                telegram.sendPhoto(context.id, request(context.rover_photo),{caption: 'Ich finde das toll.'})
+                telegram.sendPhoto(context.id, request(context.rover_photo),{caption: 'SOL: '+msg.sol_number+' Datum:'+msg.earth_date})
                 .then(function(msg) {
                     return resolve(context);
                 })
@@ -207,7 +207,6 @@ const telegram = new TelegramBot(TELEGRAM_TOKEN, { polling: true });
 telegram.on('message', function(msg) {
     console.log(JSON.stringify(msg));
 
-    debugger;
     const msg_id = msg.chat.id;
     var username = msg.from.first_name;
     // We retrieve the user's current session, or create one if it doesn't exist
@@ -229,7 +228,7 @@ telegram.on('message', function(msg) {
         }
         else if(context.myAction=='sendPhoto' && context.rover_photo)
         {
-            //telegram.sendPhoto(sender, request(context.rover_photo),{caption: 'Ich finde das toll.'});
+
             delete context.myAction;
             delete context.rover_photo;
         }

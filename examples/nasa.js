@@ -28,13 +28,15 @@ function Nasa (token) {
     }
 
 
-    self.getPhoto = function (sol_date, fn) {
+    self.getPhoto = function (sol, fn) {
 
-        if (sol_date > getMaxSOL()) {
-            fn(null, "Dieser SOL ist größer als die gespeicherten Daten.");
-        }
-        let url = 'https://api.nasa.gov/mars-photos/api/v1/rovers/curiosity/photos?sol='+ sol_date +'&camera=NAVCAM&api_key='+ self.token
+        var max_sol = 1000; //getSOl is broken.
+        var sol_date = Math.floor(Math.random() * max_sol);
+        let url = 'https://api.nasa.gov/mars-photos/api/v1/rovers/curiosity/photos?sol='+ sol_date +'&api_key='+ self.token
+        debugger;
+        console.log(url);
         request({url: url, json: true}, function (error, response, data) {
+            debugger;
             if (error) {
                 return fn(error);
             }
@@ -44,8 +46,8 @@ function Nasa (token) {
             let img_src = data.photos[0].img_src;
             let sol = data.photos[0].sol;
             let earth_date = data.photos[0].earth_date;
-            let msg = {};
-            fn(null, img_src);
+            let msg = {img_src: img_src,sol_number: sol,earth_date:earth_date};
+            fn(null, msg);
         })
     }
 }
