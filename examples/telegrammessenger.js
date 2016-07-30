@@ -20,6 +20,8 @@ const fetch = require('node-fetch');
 const request = require('request');
 
 var weather = require('./weather')('7444333da54fa1b03a38b704be42e170');
+var nasa = require('./nasa')('mLQZ8n5hw0RVZLmYOEq45jYiAj5zpOHmXFTMi0HX');
+
 
 const TelegramBot = require('node-telegram-bot-api');
 
@@ -64,24 +66,14 @@ const firstEntityValue = (entities, entity) => {
 // https://developers.facebook.com/docs/messenger-platform/send-api-reference
 
 const fbMessage = (id, text) => {
-    const body = JSON.stringify({
-        recipient: { id },
-        message: { text },
-    })
-    telegram.sendMessage(id, text);
-    const qs = 'access_token=123';
-    return fetch('https://graph.facebook.com/me/messages?' + qs, {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body,
-    })
-        .then(rsp => rsp.json())
-        .then(json => {
 
-            return {"name":"Jim Cowart","location":{"city":{"name":"Chattanooga","population":167674},"state":{"name":"Tennessee","abbreviation":"TN","population":6403000}},"company":"appendTo"};
+    return telegram.sendMessage(id, text)
+        .then(function(msg) {
+            return msg;
+        })
+        .catch(function() {
+            throw new Error("Something went wrong with the Telegram Message.");
         });
-
-   // return  ;
 };
 
 // ----------------------------------------------------------------------------
@@ -92,7 +84,7 @@ const fbMessage = (id, text) => {
 // sessionId -> {id: facebookUserId, context: sessionState}
 const sessions = {};
 
-const findOrCreateSession = (session_id) => {
+const findOrCreateSession = (session_id, telegram_username) => {
     let sessionId;
     // Let's see if we already have a session for the user session_id
     Object.keys(sessions).forEach(k => {
@@ -104,7 +96,7 @@ const findOrCreateSession = (session_id) => {
     if (!sessionId) {
         // No session found for user session_id, let's create a new one
         sessionId = new Date().toISOString();
-        sessions[sessionId] = { id: session_id, context: {} };
+        sessions[sessionId] = { id: session_id, context: {username: telegram_username, id: session_id}};
     }
     return sessionId;
 };
@@ -120,17 +112,16 @@ const actions = {
             // Yay, we found our recipient!
             // Let's forward our bot response to her.
             // We return a promise to let our bot know when we're done sending
-
             return fbMessage(recipientId, text)
-            .then(() => null)
-            .catch((err) => {
-                console.error(
-                    'Oops! An error occurred while forwarding the response to',
-                    recipientId,
-                    ':',
-                    err.stack || err
-                );
-            });
+                .then(() => null)
+                .catch((err) => {
+                    console.error(
+                        'Oops! An error occurred while forwarding the response to',
+                        recipientId,
+                        ':',
+                        err.stack || err
+                    );
+                });
 
         } else {
             console.error('Oops! Couldn\'t find user for session:', sessionId);
@@ -164,15 +155,41 @@ const actions = {
             delete context.forecast;
         });
     },
-    respondToInsult({context, entities}) {
+    sendJoke({context, entities}) {
         return new Promise(function(resolve, reject) {
 
             //http://webknox.com/api#!/jokes/praise_GET
             var index = Math.floor(Math.random() * jokes.length);
             var randomQuote = jokes[index];
-            debugger;
             context.joke = randomQuote.joke;;
-            delete context.insult;
+            return resolve(context);
+        });
+    },
+    respondToFavorite({context, entities}) {
+
+        return new Promise(function (resolve, reject) {
+            nasa.getPhoto(1000, function(error, msg) {
+                if (error) {
+                    console.error(error);
+                    //let the bot say there was an error
+                    return reject(error);
+                }
+                //need to delete a context at some point
+                context.rover_photo = msg;
+                context.myAction = 'sendPhoto';
+                //Send the photo to telegram and wait for it.
+                telegram.sendPhoto(context.id, request(context.rover_photo),{caption: 'Ich finde das toll.'})
+                .then(function(msg) {
+                    return resolve(context);
+                })
+
+            });
+        });
+    },
+    start({context, entities}) {
+
+        return new Promise(function (resolve, reject) {
+            context.start = true;
             return resolve(context);
         });
     }
@@ -190,39 +207,59 @@ const telegram = new TelegramBot(TELEGRAM_TOKEN, { polling: true });
 telegram.on('message', function(msg) {
     console.log(JSON.stringify(msg));
 
-    const sender = msg.chat.id;
-
+    debugger;
+    const msg_id = msg.chat.id;
+    var username = msg.from.first_name;
     // We retrieve the user's current session, or create one if it doesn't exist
     // This is needed for our bot to figure out the conversation history
-    const sessionId = findOrCreateSession(sender);
+    const sessionId = findOrCreateSession(msg_id, username);
+
+
     const text = msg.text;
-     // Let's forward the message to the Wit.ai Bot Engine
-     // This will run all actions until our bot has nothing left to do
+    // Let's forward the message to the Wit.ai Bot Engine
+    // This will run all actions until our bot has nothing left to do
     wit.runActions(
-     sessionId, // the user's current session
-     text, // the user's message
-     sessions[sessionId].context // the user's current session state
-     ).then((context) => {
-     // Our bot did everything it has to do.
-     // Now it's waiting for further messages to proceed.
-     console.log('Waiting for next user messages:' + JSON.stringify(context));
-     // Based on the session state, you might want to reset the session.
-     // This depends heavily on the business logic of your bot.
-     // Example:
-     if(context.forecast){
-         delete context.forecast;
-     }
+        sessionId, // the user's current session
+        text, // the user's message
+        sessions[sessionId].context // the user's current session state
+    ).then((context) => {
 
-     if (context['done']) {
-        delete sessions[sessionId];
-     }
+        if(context.start){
+            delete context.start;
+        }
+        else if(context.myAction=='sendPhoto' && context.rover_photo)
+        {
+            //telegram.sendPhoto(sender, request(context.rover_photo),{caption: 'Ich finde das toll.'});
+            delete context.myAction;
+            delete context.rover_photo;
+        }
+        else if(context.joke)
+        {
+            delete context.joke;
+        }
+        if(context.forecast){
+            delete context.forecast;
+        }
 
-     // Updating the user's current session state
-     sessions[sessionId].context = context;
-     })
-     .catch((err) => {
-     console.error('Oops! Got an error from Wit: ', err.stack || err);
-     })
+        if (context['done']) {
+            delete sessions[sessionId];
+        }
+
+        // Our bot did everything it has to do.
+        // Now it's waiting for further messages to proceed.
+
+        // Based on the session state, you might want to reset the session.
+        // This depends heavily on the business logic of your bot.
+        // Example:
+
+        console.log('Waiting for next user messages:' + JSON.stringify(context));
+
+        // Updating the user's current session state
+        sessions[sessionId].context = context;
+    })
+        .catch((err) => {
+            console.error('Oops! Got an error from Wit: ', err.stack || err);
+        })
 
 });
 
@@ -328,3 +365,6 @@ var jokes = [
     {joke: "Rollen zwei Tomaten über die Straße. Sagt die eine: \"Vorsicht, da vorne kommt ein Lastwatsch!"},
     {joke: "Was ist ein Cowboy ohne Pferd? - Ein Sattelschlepper."}
 ];
+
+//Stuff to look at - NASA API
+//https://api.nasa.gov/
