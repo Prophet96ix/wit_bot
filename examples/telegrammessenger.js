@@ -1,5 +1,5 @@
 'use strict';
-
+//https://blog.meinside.pe.kr/Implement-a-Speech-to-Text-Bot-Using-Wit-Ai-API/
 // Messenger API integration example
 // We assume you have:
 // * a Wit.ai bot setup (https://wit.ai/docs/quickstart)
@@ -13,9 +13,9 @@
 // 5. Subscribe your page to the Webhooks using verify_token and `https://<your_ngrok_io>/webhook` as callback URL.
 // 6. Talk to your bot on Messenger!
 
-const bodyParser = require('body-parser');
-const crypto = require('crypto');
-const express = require('express');
+//const bodyParser = require('body-parser');
+//const crypto = require('crypto');
+//const express = require('express');
 const fetch = require('node-fetch');
 const request = require('request');
 
@@ -65,9 +65,28 @@ const firstEntityValue = (entities, entity) => {
 // See the Send API reference
 // https://developers.facebook.com/docs/messenger-platform/send-api-reference
 
-const fbMessage = (id, text) => {
+const fbMessage = (id, response) => {
+  console.log(JSON.stringify(response));
 
-    return telegram.sendMessage(id, text)
+
+  if(response.quickreplies)
+  {
+
+    var opts = {
+          reply_markup: JSON.stringify({
+            keyboard:[ response.quickreplies ],
+            resize_keyboard: false,
+            one_time_keyboard: true
+            //inline_keyboard: [[{text: 'Test button', callback_data: 'test'}]]
+          })
+    };
+
+    console.log("Original Opts: "+ JSON.stringify(opts));
+    response.opts = opts;
+  }
+  console.log("Original Opts: "+ JSON.stringify(response.opts));
+
+    return telegram.sendMessage(id, response.text, response.opts)
         .then(function(msg) {
             return msg;
         })
@@ -103,7 +122,7 @@ const findOrCreateSession = (session_id, telegram_username) => {
 
 // Our bot actions
 const actions = {
-    send({ sessionId }, { text }) {
+    send({ sessionId }, response) {
         // Our bot has something to say!
         // Let's retrieve the Facebook user whose session belongs to
         const recipientId = sessions[sessionId].id;
@@ -112,7 +131,8 @@ const actions = {
             // Yay, we found our recipient!
             // Let's forward our bot response to her.
             // We return a promise to let our bot know when we're done sending
-            return fbMessage(recipientId, text)
+            console.log("Response in Action: "+ JSON.stringify(response));
+            return fbMessage(recipientId, response)
                 .then(() => null)
                 .catch((err) => {
                     console.error(
@@ -168,10 +188,15 @@ const actions = {
     respondToFavorite({context, entities}) {
 
         return new Promise(function (resolve, reject) {
+          telegram.sendChatAction(context.id, 'upload_photo')
+          .then(function(msg) {
+              console.log(msg);
+          })
             nasa.getPhoto(1000, function(error, msg) {
                 if (error) {
                     console.error(error);
                     //let the bot say there was an error
+                    telegram.sendMessage(context.id,"Entschuldige, es ist etwas schief gelaufen. Versuch es einfach nochmal.");
                     return reject(error);
                 }
                 //need to delete a context at some point
@@ -204,7 +229,7 @@ const wit = new Wit({
 
 const telegram = new TelegramBot(TELEGRAM_TOKEN, { polling: true });
 
-telegram.on('message', function(msg) {
+telegram.on('text', function(msg) {
     console.log(JSON.stringify(msg));
 
     const msg_id = msg.chat.id;
