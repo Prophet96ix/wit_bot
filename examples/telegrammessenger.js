@@ -185,6 +185,34 @@ const actions = {
             return resolve(context);
         });
     },
+    getWLan({context, entities}) {
+
+        return new Promise(function (resolve, reject) {
+          console.log("WLanLocation:"+JSON.stringify(context));
+          context.WLanLocation = true;
+          //need to delete a context at some point
+          var locationButton = {
+            text: "Standort mitteilen.",
+            request_location: true
+          };
+          var opts = {
+                reply_markup: JSON.stringify({
+                  keyboard:[[locationButton]],
+                  resize_keyboard: true,
+                  one_time_keyboard: true
+                  //inline_keyboard: [[{text: 'Test button', callback_data: 'test'}]]
+                })
+          };
+              telegram.sendMessage(context.id, "Bitte teile mir Deinen Standort mit.", opts)
+              .then(function(msg) {
+                    return resolve(context);
+              })
+              .catch(function() {
+                  throw new Error("Something went wrong with the Telegram Message.");
+              });
+
+        });
+    },
     respondToFavorite({context, entities}) {
 
         return new Promise(function (resolve, reject) {
@@ -229,8 +257,31 @@ const wit = new Wit({
 
 const telegram = new TelegramBot(TELEGRAM_TOKEN, { polling: true });
 
+telegram.on('location', function(msg) {
+  console.log("Telegram on 'location':"+JSON.stringify(msg.location));;
+
+  const msg_id = msg.chat.id;
+  var username = msg.from.first_name;
+
+  var sessionId = findOrCreateSession(msg_id, username);
+  var context = sessions[sessionId].context
+  if(context.WLanLocation)
+  {
+      telegram.sendChatAction(context.id, 'find_location')
+      .then(function(msg) {
+          console.log();
+      })
+
+      telegram.sendLocation(context.id, 51.9350264,7.6509148)
+      .then(function(msg) {
+        console.log("WLan location send.");
+        delete context.WLanLocation;
+      })
+  }
+});
+
 telegram.on('text', function(msg) {
-    console.log(JSON.stringify(msg));
+    console.log("Telegram on 'message':"+JSON.stringify(msg));
 
     const msg_id = msg.chat.id;
     var username = msg.from.first_name;
@@ -261,6 +312,7 @@ telegram.on('text', function(msg) {
         {
             delete context.joke;
         }
+
         if(context.forecast){
             delete context.forecast;
         }
