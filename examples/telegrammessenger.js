@@ -21,10 +21,9 @@ const request = require('request');
 
 var weather = require('./weather')('7444333da54fa1b03a38b704be42e170');
 var nasa = require('./nasa')('mLQZ8n5hw0RVZLmYOEq45jYiAj5zpOHmXFTMi0HX');
-
+var knoellchen = require('./knoellchen')();
 
 const TelegramBot = require('node-telegram-bot-api');
-
 
 let Wit = null;
 let log = null;
@@ -39,10 +38,10 @@ try {
 
 
 //Tokens
-const WIT_TOKEN = 'S4C57Y3N6ODQME4NTXZZ523EZOFOQY4X';
+const WIT_TOKEN = 'BPZKG7XJC5HOFBAST2OLE2NDRHLJQCFV'; //'S4C57Y3N6ODQME4NTXZZ523EZOFOQY4X';
 if (!WIT_TOKEN) {
     throw new Error('missing WIT_TOKEN') }
-const TELEGRAM_TOKEN = '216516492:AAFyv5D1w8kOv9zn7Rsm5Yr9p_lzerIENWs';
+const TELEGRAM_TOKEN = '212581001:AAH8Dx8McV7KiXph-UxnJtCCOt_Q4KVnv_Q';
 if (!TELEGRAM_TOKEN) {
     throw new Error('missing TELEGRAM_TOKEN') }
 
@@ -177,13 +176,39 @@ const actions = {
     },
     sendJoke({context, entities}) {
         return new Promise(function(resolve, reject) {
-
             //http://webknox.com/api#!/jokes/praise_GET
             var index = Math.floor(Math.random() * jokes.length);
             var randomQuote = jokes[index];
             context.joke = randomQuote.joke;;
             return resolve(context);
         });
+    },
+    /* getKnoellchenForecast */
+    getData({context, entities}) {
+      return new Promise(function (resolve, reject) {
+        console.log("KnoellchenLocation:"+JSON.stringify(context));
+        context.knoellchen = true;
+        //need to delete a context at some point
+        var locationButton = {
+          text: "Standort mitteilen.",
+          request_location: true
+        };
+        var opts = {
+          reply_markup: JSON.stringify({
+            keyboard:[[locationButton]],
+            resize_keyboard: true,
+            one_time_keyboard: true
+            //inline_keyboard: [[{text: 'Test button', callback_data: 'test'}]]
+          })
+        };
+        telegram.sendMessage(context.id, "Bitte teile mir Deinen Standort mit.", opts)
+        .then(function(msg) {
+          return resolve(context);
+        })
+        .catch(function() {
+          throw new Error("Something went wrong with the Telegram Message.");
+        });
+      });
     },
     getWLan({context, entities}) {
 
@@ -267,17 +292,33 @@ telegram.on('location', function(msg) {
   var context = sessions[sessionId].context
   if(context.WLanLocation)
   {
-      telegram.sendChatAction(context.id, 'find_location')
-      .then(function(msg) {
-          console.log();
-      })
+    telegram.sendChatAction(context.id, 'find_location')
+    .then(function(msg) {
+        console.log();
+    })
 
-      telegram.sendLocation(context.id, 51.9350264,7.6509148)
-      .then(function(msg) {
-        console.log("WLan location send.");
-        delete context.WLanLocation;
-      })
+    telegram.sendLocation(context.id, 51.9350264,7.6509148)
+    .then(function(msg) {
+      console.log("WLan location send.");
+      delete context.WLanLocation;
+    })
   }
+  //if(context.knoellchen) {
+    knoellchen.get(msg.location, function(error, msg) {
+      if (error) {
+        console.error(error);
+        return reject(error);
+      }
+      telegram.sendMessage(context.id, msg)
+        .then(function(msg) {
+          return msg;
+        })
+        .catch(function() {
+          throw new Error("Something went wrong with the Telegram Message.");
+        });
+
+    });
+  //}
 });
 
 telegram.on('text', function(msg) {
